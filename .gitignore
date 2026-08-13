@@ -1,3 +1,14 @@
 # Python cache
 __pycache__/
 *.pyc
+
+# Virtualenv
+.venv/
+
+# Secrets — never commit real credentials
+.env
+
+# Local SQLite fallback database
+tasks.db
+tasks.db-wal
+tasks.db-shm
