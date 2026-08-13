@@ -1,0 +1,33 @@
+# ---------------------------------------------------------------------------
+# Task API — single-service stack for the FastAPI + SQLite app.
+#
+#   docker compose up --build
+#
+# The app stores tasks in a SQLite file. That file lives inside the
+# `task_data` named volume, so tasks survive container restarts, `docker
+# compose down`, and even image rebuilds — no database service needed.
+# ---------------------------------------------------------------------------
+
+services:
+  app:
+    # Build the image from the Dockerfile in this folder.
+    build: .
+    container_name: task-api
+    ports:
+      # host:container — visit http://localhost:8000/docs for Swagger UI
+      - "8000:8000"
+    environment:
+      # Tell the app (appd.py) to keep tasks.db inside the mounted volume
+      # instead of the container's working directory.
+      TASK_DB_PATH: /app/data/tasks.db
+    volumes:
+      # Named volume: Docker manages the underlying storage location for us.
+      - task_data:/app/data
+    # Bring the service back up automatically after crashes or host reboots
+    # (unless the user explicitly stops it).
+    restart: unless-stopped
+
+# Named volumes are Docker's way of persisting data across container
+# lifecycles — they survive `docker compose down` (and `down -v` deletes them).
+volumes:
+  task_data:

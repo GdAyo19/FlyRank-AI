@@ -9,10 +9,41 @@ No external database server needed; everything lives in a single file on disk.
 
 ```bash
 pip install fastapi uvicorn
-uvicorn app:app --host 0.0.0.0 --port 8000
+uvicorn appd:app --host 0.0.0.0 --port 8000
 ```
 
 Open http://localhost:8000/docs for Swagger UI.
+
+## Run with Docker
+
+The project ships with a `Dockerfile` and a `docker-compose.yml` so you can
+run the whole API in a container without installing Python locally.
+
+```bash
+# Build the image and start the container (add -d to run in the background)
+docker compose up --build
+```
+
+The SQLite database is stored in a **named volume** (`task_data`), so your
+tasks survive container restarts and `docker compose down`. To start over
+from scratch, delete the volume too:
+
+```bash
+docker compose down -v
+```
+
+To run the bare image without Compose:
+
+```bash
+docker build -t task-api .
+docker run --rm -p 8000:8000 -e TASK_DB_PATH=/app/data/tasks.db task-api
+```
+
+Environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TASK_DB_PATH` | `tasks.db` | Where the SQLite file lives. Docker Compose points it at `/app/data/tasks.db` inside the volume. |
 
 ## Endpoints
 
