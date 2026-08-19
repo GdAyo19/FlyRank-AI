@@ -146,11 +146,20 @@ def public_info():
 
 @app.get("/protected/profile")
 def protected_profile(authorization: str | None = Header(default=None)):
-    """Extract the bearer token; verification is added in a later stage."""
+    """Verify the bearer token with Supabase and return the user's profile."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Access token required")
     token = authorization.split(" ", 1)[1]
-    return {"token_received": token}
+    try:
+        res = supabase.auth.get_user(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    user = res.user
+    return {
+        "id": user.id,
+        "email": user.email,
+        "created_at": user.created_at,
+    }
 
 
 # ---------------------------------------------------------------------------
