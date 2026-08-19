@@ -1,6 +1,25 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from supabase import create_client, Client
+from dotenv import load_dotenv
+import os
 import sqlite3  # Built-in module; no pip install needed.
+
+# ---------------------------------------------------------------------------
+# Environment & Supabase client
+# ---------------------------------------------------------------------------
+
+load_dotenv()
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise RuntimeError(
+        "Missing SUPABASE_URL or SUPABASE_KEY. Copy .env.example to .env and fill it in."
+    )
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ---------------------------------------------------------------------------
 # Database helpers
@@ -34,13 +53,14 @@ def init_db() -> None:
 # FastAPI app
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="Task API", description="A simple CRUD API to manage a to-do list.", version="2.0")
+app = FastAPI(title="Task API", description="A simple CRUD API to manage a to-do list.", version="3.0")
 
 
 @app.on_event("startup")
 def on_startup() -> None:
     """Ensure the database and table exist when the server starts."""
     init_db()
+    print("Server running and connected to Supabase")
 
 
 # ---------------------------------------------------------------------------
@@ -78,7 +98,7 @@ def _row_to_task(row: sqlite3.Row) -> dict:
 
 @app.get("/")
 def root():
-    return {"name": "Task API", "version": "2.0"}
+    return {"name": "Task API", "version": "3.0"}
 
 
 @app.get("/health")
@@ -151,5 +171,3 @@ def delete_task(task_id: int):
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Task not found")
     return None  # 204 No Content — no body sent to client
-
-    
