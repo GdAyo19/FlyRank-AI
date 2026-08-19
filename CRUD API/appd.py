@@ -55,7 +55,18 @@ def init_db() -> None:
 # FastAPI app
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="Task API", description="A simple CRUD API to manage a to-do list.", version="3.0")
+app = FastAPI(
+    title="Task API",
+    description="A simple CRUD API with Supabase Auth. "
+    "Use the **Authorize** button below to paste your Bearer token for the protected routes.",
+    version="3.0",
+    openapi_tags=[
+        {"name": "Auth", "description": "Sign up, log in and log out"},
+        {"name": "Public", "description": "Open endpoints"},
+        {"name": "Protected", "description": "Endpoints that need a valid Bearer token"},
+        {"name": "Tasks", "description": "CRUD for tasks"},
+    ],
+)
 
 
 @app.on_event("startup")
@@ -125,7 +136,7 @@ def get_current_user(
 # ---------------------------------------------------------------------------
 
 
-@app.post("/auth/signup", status_code=201)
+@app.post("/auth/signup", status_code=201, tags=["Auth"])
 def signup(body: AuthRequest):
     """Register a new user with Supabase Auth."""
     if not body.email or not body.password:
@@ -137,7 +148,7 @@ def signup(body: AuthRequest):
     return res.user
 
 
-@app.post("/auth/login")
+@app.post("/auth/login", tags=["Auth"])
 def login(body: AuthRequest):
     """Authenticate a user and return the JWT access + refresh tokens."""
     if not body.email or not body.password:
@@ -159,13 +170,13 @@ def login(body: AuthRequest):
 # ---------------------------------------------------------------------------
 
 
-@app.get("/public/info")
+@app.get("/public/info", tags=["Public"])
 def public_info():
     """Open route that needs no authentication at all."""
     return {"message": "Welcome stranger! This info is public."}
 
 
-@app.post("/auth/logout", status_code=204)
+@app.post("/auth/logout", status_code=204, tags=["Auth"])
 def logout(user: dict = Depends(get_current_user)):
     """Terminate the current user session (requires a valid Bearer token)."""
     try:
@@ -175,7 +186,7 @@ def logout(user: dict = Depends(get_current_user)):
     return None  # 204 No Content — no body sent to client
 
 
-@app.get("/protected/profile")
+@app.get("/protected/profile", tags=["Protected"])
 def protected_profile(user: dict = Depends(get_current_user)):
     """Return the logged-in user's profile data (token verified)."""
     return {
@@ -185,7 +196,7 @@ def protected_profile(user: dict = Depends(get_current_user)):
     }
 
 
-@app.get("/protected/dashboard")
+@app.get("/protected/dashboard", tags=["Protected"])
 def protected_dashboard(user: dict = Depends(get_current_user)):
     """Second protected route to prove the middleware guards any endpoint."""
     return {"message": f"Welcome back, {user.email}! This is your dashboard."}
