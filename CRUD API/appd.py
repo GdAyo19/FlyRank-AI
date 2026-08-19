@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from supabase import create_client, Client
+from gotrue.errors import AuthApiError
 from dotenv import load_dotenv
 import os
 import sqlite3  # Built-in module; no pip install needed.
@@ -77,6 +78,13 @@ class TaskUpdate(BaseModel):
     done: bool | None = None
 
 
+class AuthRequest(BaseModel):
+    # Optional so a missing/empty field reaches our manual check and returns
+    # 400, instead of Pydantic's automatic 422.
+    email: str | None = None
+    password: str | None = None
+
+
 # ---------------------------------------------------------------------------
 # Helper: convert a sqlite3.Row to the dict shape clients expect
 # ---------------------------------------------------------------------------
@@ -88,6 +96,40 @@ def _row_to_task(row: sqlite3.Row) -> dict:
         "id": row["id"],
         "title": row["title"],
         "done": bool(row["done"]),  # convert 0/1 integer to Python bool
+    }
+
+
+# ---------------------------------------------------------------------------
+# Auth endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.post("/auth/signup", status_code=201)
+def signup(body: AuthRequest):
+    """Register a new user with Supabase Auth."""
+    if not body.email or not body.password:
+        raise HTTPException(status_code=400, detail="Email and password are required")
+    try:
+        res = supabase.auth.sign_up({"email": body.email, "password": body.password})
+    except AuthApiError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return res.user
+
+
+@app.post("/auth/login")
+def login(body: AuthRequest):
+    """Authenticate a user and return the JWT access + refresh tokens."""
+    if not body.email or not body.password:
+        raise HTTPException(status_code=400, detail="Email and password are required")
+    try:
+        res = supabase.auth.sign_in_with_password(
+            {"email": body.email, "password": body.password}
+        )
+    except AuthApiError:
+        raise HTTPException(status_code=401, detail="Invalid login credentials")
+    return {
+        "access_token": res.session.access_token,
+        "refresh_token": res.session.refresh_token,
     }
 
 
