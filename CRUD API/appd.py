@@ -200,7 +200,10 @@ def protected_profile(user: dict = Depends(get_current_user)):
 def protected_dashboard(user: dict = Depends(get_current_user)):
     """Second protected route to prove the middleware guards any endpoint."""
     return {"message": f"Welcome back, {user.email}! This is your dashboard."}
-# Endpoints
+
+
+# ---------------------------------------------------------------------------
+# Task CRUD endpoints (kept from v2)
 # ---------------------------------------------------------------------------
 
 
