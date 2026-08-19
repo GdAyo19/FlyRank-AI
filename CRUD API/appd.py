@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel
 from supabase import create_client, Client
 from gotrue.errors import AuthApiError
@@ -131,6 +131,26 @@ def login(body: AuthRequest):
         "access_token": res.session.access_token,
         "refresh_token": res.session.refresh_token,
     }
+
+
+# ---------------------------------------------------------------------------
+# Public & protected endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/public/info")
+def public_info():
+    """Open route that needs no authentication at all."""
+    return {"message": "Welcome stranger! This info is public."}
+
+
+@app.get("/protected/profile")
+def protected_profile(authorization: str | None = Header(default=None)):
+    """Extract the bearer token; verification is added in a later stage."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Access token required")
+    token = authorization.split(" ", 1)[1]
+    return {"token_received": token}
 
 
 # ---------------------------------------------------------------------------
