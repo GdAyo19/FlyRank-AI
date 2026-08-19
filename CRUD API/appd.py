@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from supabase import create_client, Client
 from gotrue.errors import AuthApiError
@@ -100,6 +101,26 @@ def _row_to_task(row: sqlite3.Row) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Auth dependency (middleware): verifies the Bearer token on every call
+# ---------------------------------------------------------------------------
+
+security = HTTPBearer(auto_error=False)
+
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> dict:
+    """Extract and verify the Bearer token, returning the logged-in user."""
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Access token required")
+    try:
+        res = supabase.auth.get_user(credentials.credentials)
+        return res.user  # dict-like object with id, email, created_at, ...
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
+# ---------------------------------------------------------------------------
 # Auth endpoints
 # ---------------------------------------------------------------------------
 
@@ -144,17 +165,19 @@ def public_info():
     return {"message": "Welcome stranger! This info is public."}
 
 
-@app.get("/protected/profile")
-def protected_profile(authorization: str | None = Header(default=None)):
-    """Verify the bearer token with Supabase and return the user's profile."""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Access token required")
-    token = authorization.split(" ", 1)[1]
+@app.post("/auth/logout", status_code=204)
+def logout(user: dict = Depends(get_current_user)):
+    """Terminate the current user session (requires a valid Bearer token)."""
     try:
-        res = supabase.auth.get_user(token)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-    user = res.user
+        supabase.auth.sign_out()
+    except AuthApiError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return None  # 204 No Content — no body sent to client
+
+
+@app.get("/protected/profile")
+def protected_profile(user: dict = Depends(get_current_user)):
+    """Return the logged-in user's profile data (token verified)."""
     return {
         "id": user.id,
         "email": user.email,
@@ -162,7 +185,10 @@ def protected_profile(authorization: str | None = Header(default=None)):
     }
 
 
-# ---------------------------------------------------------------------------
+@app.get("/protected/dashboard")
+def protected_dashboard(user: dict = Depends(get_current_user)):
+    """Second protected route to prove the middleware guards any endpoint."""
+    return {"message": f"Welcome back, {user.email}! This is your dashboard."}
 # Endpoints
 # ---------------------------------------------------------------------------
 
