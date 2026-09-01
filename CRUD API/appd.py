@@ -1,7 +1,28 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
+from supabase import create_client, Client
+from gotrue.errors import AuthApiError
+from dotenv import load_dotenv
+import os
 import sqlite3  # Built-in module; no pip install needed.
 import os  # used to read the TASK_DB_PATH env var so Docker can relocate the db file
+
+# ---------------------------------------------------------------------------
+# Environment & Supabase client
+# ---------------------------------------------------------------------------
+
+load_dotenv()
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise RuntimeError(
+        "Missing SUPABASE_URL or SUPABASE_KEY. Copy .env.example to .env and fill it in."
+    )
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ---------------------------------------------------------------------------
 # Database helpers
@@ -45,13 +66,25 @@ def init_db() -> None:
 # FastAPI app
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="Task API", description="A simple CRUD API to manage a to-do list.", version="2.0")
+app = FastAPI(
+    title="Task API",
+    description="A simple CRUD API with Supabase Auth. "
+    "Use the **Authorize** button below to paste your Bearer token for the protected routes.",
+    version="3.0",
+    openapi_tags=[
+        {"name": "Auth", "description": "Sign up, log in and log out"},
+        {"name": "Public", "description": "Open endpoints"},
+        {"name": "Protected", "description": "Endpoints that need a valid Bearer token"},
+        {"name": "Tasks", "description": "CRUD for tasks"},
+    ],
+)
 
 
 @app.on_event("startup")
 def on_startup() -> None:
     """Ensure the database and table exist when the server starts."""
     init_db()
+    print("Server running and connected to Supabase")
 
 
 # ---------------------------------------------------------------------------
@@ -66,6 +99,13 @@ class TaskCreate(BaseModel):
 class TaskUpdate(BaseModel):
     title: str | None = None
     done: bool | None = None
+
+
+class AuthRequest(BaseModel):
+    # Optional so a missing/empty field reaches our manual check and returns
+    # 400, instead of Pydantic's automatic 422.
+    email: str | None = None
+    password: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -83,13 +123,104 @@ def _row_to_task(row: sqlite3.Row) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Endpoints
+# Auth dependency (middleware): verifies the Bearer token on every call
+# ---------------------------------------------------------------------------
+
+security = HTTPBearer(auto_error=False)
+
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> dict:
+    """Extract and verify the Bearer token, returning the logged-in user."""
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Access token required")
+    try:
+        res = supabase.auth.get_user(credentials.credentials)
+        return res.user  # dict-like object with id, email, created_at, ...
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
+# ---------------------------------------------------------------------------
+# Auth endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.post("/auth/signup", status_code=201, tags=["Auth"])
+def signup(body: AuthRequest):
+    """Register a new user with Supabase Auth."""
+    if not body.email or not body.password:
+        raise HTTPException(status_code=400, detail="Email and password are required")
+    try:
+        res = supabase.auth.sign_up({"email": body.email, "password": body.password})
+    except AuthApiError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return res.user
+
+
+@app.post("/auth/login", tags=["Auth"])
+def login(body: AuthRequest):
+    """Authenticate a user and return the JWT access + refresh tokens."""
+    if not body.email or not body.password:
+        raise HTTPException(status_code=400, detail="Email and password are required")
+    try:
+        res = supabase.auth.sign_in_with_password(
+            {"email": body.email, "password": body.password}
+        )
+    except AuthApiError:
+        raise HTTPException(status_code=401, detail="Invalid login credentials")
+    return {
+        "access_token": res.session.access_token,
+        "refresh_token": res.session.refresh_token,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Public & protected endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/public/info", tags=["Public"])
+def public_info():
+    """Open route that needs no authentication at all."""
+    return {"message": "Welcome stranger! This info is public."}
+
+
+@app.post("/auth/logout", status_code=204, tags=["Auth"])
+def logout(user: dict = Depends(get_current_user)):
+    """Terminate the current user session (requires a valid Bearer token)."""
+    try:
+        supabase.auth.sign_out()
+    except AuthApiError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return None  # 204 No Content — no body sent to client
+
+
+@app.get("/protected/profile", tags=["Protected"])
+def protected_profile(user: dict = Depends(get_current_user)):
+    """Return the logged-in user's profile data (token verified)."""
+    return {
+        "id": user.id,
+        "email": user.email,
+        "created_at": user.created_at,
+    }
+
+
+@app.get("/protected/dashboard", tags=["Protected"])
+def protected_dashboard(user: dict = Depends(get_current_user)):
+    """Second protected route to prove the middleware guards any endpoint."""
+    return {"message": f"Welcome back, {user.email}! This is your dashboard."}
+
+
+# ---------------------------------------------------------------------------
+# Task CRUD endpoints (kept from v2)
 # ---------------------------------------------------------------------------
 
 
 @app.get("/")
 def root():
-    return {"name": "Task API", "version": "2.0"}
+    return {"name": "Task API", "version": "3.0"}
 
 
 @app.get("/health")
@@ -162,5 +293,3 @@ def delete_task(task_id: int):
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Task not found")
     return None  # 204 No Content — no body sent to client
-
-    

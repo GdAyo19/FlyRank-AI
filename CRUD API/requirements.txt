@@ -1,8 +1,4 @@
-# Runtime dependencies for the Task API.
-# The app itself uses only the Python standard library for storage (sqlite3).
-#
-# Version ranges use `~=` (compatible release) so minor updates are allowed
-# but breaking major bumps are not. Pinning loosely like this keeps the
-# container reproducible without being fragile.
-fastapi~=0.115
-uvicorn[standard]~=0.34
+fastapi
+uvicorn
+supabase
+python-dotenv
