@@ -6,6 +6,7 @@ from gotrue.errors import AuthApiError
 from dotenv import load_dotenv
 import os
 import sqlite3  # Built-in module; no pip install needed.
+import os  # used to read the TASK_DB_PATH env var so Docker can relocate the db file
 
 # ---------------------------------------------------------------------------
 # Environment & Supabase client
@@ -27,7 +28,17 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # Database helpers
 # ---------------------------------------------------------------------------
 
-DB_PATH = "tasks.db"  # SQLite file that persists tasks to disk.
+# The database file can be moved with the TASK_DB_PATH environment variable.
+# Docker Compose uses this to point at a file inside a named volume, so tasks
+# survive container restarts. When the env var is missing we fall back to a
+# plain "tasks.db" in the current folder (how the app behaved before Docker).
+DB_PATH = os.environ.get("TASK_DB_PATH", "tasks.db")
+
+# SQLite won't create parent directories for us. In Docker the volume mount
+# starts out empty, so make sure the folder that will hold the db exists.
+_db_dir = os.path.dirname(DB_PATH)
+if _db_dir:
+    os.makedirs(_db_dir, exist_ok=True)
 
 
 def get_db() -> sqlite3.Connection:
