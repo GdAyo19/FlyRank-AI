@@ -1,0 +1,29 @@
+# ---------------------------------------------------------------------------
+# .dockerignore — files Docker skips when building the image (sent as build
+# context). Keeps the image small and, more importantly, prevents secrets and
+# local database files from being baked in.
+# ---------------------------------------------------------------------------
+
+# Python cache / virtualenvs
+__pycache__/
+*.pyc
+.venv/
+
+# Secrets — real credentials must never end up in an image. .env.example is
+# kept out too since it is documentation, not runtime code.
+.env
+.env.*
+
+# Local SQLite database files. In Docker they belong in the named volume,
+# not inside the image (otherwise every rebuild would copy a stale copy).
+tasks.db
+tasks.db-wal
+tasks.db-shm
+
+# Git metadata / editor junk
+.git/
+.gitignore
+.DS_Store
+
+# Docs — README is useful in the repo but not inside the container.
+*.md
