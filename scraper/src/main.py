@@ -21,6 +21,7 @@ USER_AGENT = "FlyRankInternshipA9/1.0 (+https://github.com/GdAyo19/FlyRank-AI)"
 TIMEOUT = 10
 REQUEST_DELAY = 0.5
 MAX_PAGES = 3
+MAX_RETRIES = 1
 
 
 class BookRecord(BaseModel):
@@ -36,11 +37,24 @@ class BookRecord(BaseModel):
 
 
 def fetch_page(url: str) -> bytes:
-    """Fetch a page from the site with a polite user-agent."""
+    """Fetch a page with polite user-agent. Retries on timeout/5xx, not on 404/403."""
     headers = {"User-Agent": USER_AGENT}
-    response = requests.get(url, headers=headers, timeout=TIMEOUT)
-    response.raise_for_status()
-    return response.content
+    for attempt in range(1 + MAX_RETRIES):
+        try:
+            response = requests.get(url, headers=headers, timeout=TIMEOUT)
+            if response.status_code >= 500 and attempt < MAX_RETRIES:
+                print(f"  RETRY — {response.status_code} from {url}, waiting 2s")
+                time.sleep(2)
+                continue
+            response.raise_for_status()
+            return response.content
+        except requests.exceptions.Timeout:
+            if attempt < MAX_RETRIES:
+                print(f"  RETRY — timeout from {url}, waiting 2s")
+                time.sleep(2)
+                continue
+            raise
+    raise RuntimeError(f"Failed to fetch {url} after {1 + MAX_RETRIES} attempts")
 
 
 def get_cache_path(page_num: int) -> str:
@@ -169,31 +183,56 @@ def main() -> None:
     os.makedirs(CACHE_DIR, exist_ok=True)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+    start_time = datetime.now(timezone.utc)
+    stats = {
+        "start_time": start_time.isoformat(),
+        "pages_fetched": 0,
+        "cache_hits": 0,
+        "valid_records": 0,
+        "invalid_records": 0,
+        "failed_pages": 0,
+    }
+
+    # Stage 5 — collect book links from catalogue pages
     all_links: list[str] = []
-    current_url = BASE_URL.format(1)
-
     for page_num in range(1, MAX_PAGES + 1):
-        html = load_or_fetch(page_num)
         page_url = BASE_URL.format(page_num)
-        book_links = extract_book_links(html, page_url)
-        all_links.extend(book_links)
-
-        next_url = get_next_page(html, page_url)
-        if next_url:
-            current_url = next_url
+        cache_path = get_cache_path(page_num)
+        if os.path.exists(cache_path):
+            stats["cache_hits"] += 1
         else:
-            break
+            stats["pages_fetched"] += 1
+        try:
+            html = load_or_fetch(page_num)
+            book_links = extract_book_links(html, page_url)
+            all_links.extend(book_links)
+        except Exception as e:
+            stats["failed_pages"] += 1
+            print(f"  FAILED — catalogue page {page_num}: {e}")
+            continue
 
     unique_links = list(dict.fromkeys(all_links))
+    # Inject one fake URL to prove failure handling works
+    unique_links.append("https://books.toscrape.com/catalogue/fake-book-9999/index.html")
     print(f"catalogue_pages={MAX_PAGES} discovered={len(all_links)} unique_urls={len(unique_links)}")
 
-    # Stage 3 — fetch and parse every detail page
+    # Stage 5 — fetch and parse every detail page, survive failures
     raw_records: list[dict] = []
     source_page = BASE_URL.format(1)
     for idx, url in enumerate(unique_links, 1):
-        detail_html = load_or_fetch_detail(url)
-        record = extract_book_detail(detail_html, url, source_page)
-        raw_records.append(record)
+        cache_path = get_detail_cache_path(url)
+        if os.path.exists(cache_path):
+            stats["cache_hits"] += 1
+        else:
+            stats["pages_fetched"] += 1
+        try:
+            detail_html = load_or_fetch_detail(url)
+            record = extract_book_detail(detail_html, url, source_page)
+            raw_records.append(record)
+        except Exception as e:
+            stats["failed_pages"] += 1
+            print(f"  FAILED — {url}: {e}")
+            continue
         if idx % 10 == 0:
             print(f"  … parsed {idx}/{len(unique_links)} detail pages")
 
@@ -211,8 +250,10 @@ def main() -> None:
         try:
             validated = BookRecord(**record)
             books.append(validated.model_dump(mode="json"))
+            stats["valid_records"] += 1
         except ValidationError as e:
             errors.append({"record": record, "error": e.errors()})
+            stats["invalid_records"] += 1
 
     # Write output files (idempotent — overwrite on each run)
     books_path = os.path.join(OUTPUT_DIR, "books.json")
@@ -223,10 +264,28 @@ def main() -> None:
     with open(errors_path, "w") as f:
         json.dump(errors, f, indent=2)
 
+    # Stage 5 — write run report
+    end_time = datetime.now(timezone.utc)
+    duration_seconds = (end_time - start_time).total_seconds()
+    run_report = {
+        "start_time": start_time.isoformat(),
+        "end_time": end_time.isoformat(),
+        "duration_seconds": round(duration_seconds, 2),
+        "pages_fetched": stats["pages_fetched"],
+        "cache_hits": stats["cache_hits"],
+        "valid_records": stats["valid_records"],
+        "invalid_records": stats["invalid_records"],
+        "failed_pages": stats["failed_pages"],
+    }
+    report_path = os.path.join(OUTPUT_DIR, "run-report.json")
+    with open(report_path, "w") as f:
+        json.dump(run_report, f, indent=2)
+
     print(f"\nCHECKPOINT — one complete raw record:")
     print(json.dumps(books[0], indent=2))
-    print(f"\nbooks={len(books)} errors={len(errors)}")
+    print(f"\nbooks={len(books)} errors={len(errors)} failed_pages={stats['failed_pages']}")
     print(f"Output: {books_path}")
+    print(f"Report: {report_path}")
 
 
 if __name__ == "__main__":
