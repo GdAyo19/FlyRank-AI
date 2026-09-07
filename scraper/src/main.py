@@ -12,13 +12,27 @@ from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
+from pydantic import BaseModel, Field, HttpUrl, ValidationError
 
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "cache")
+OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "output")
 BASE_URL = "https://books.toscrape.com/catalogue/page-{}.html"
 USER_AGENT = "FlyRankInternshipA9/1.0 (+https://github.com/GdAyo19/FlyRank-AI)"
 TIMEOUT = 10
 REQUEST_DELAY = 0.5
 MAX_PAGES = 3
+
+
+class BookRecord(BaseModel):
+    title: str
+    product_url: HttpUrl
+    price_text: str
+    price_gbp: float = Field(ge=0)
+    availability_text: str
+    rating_text: str | None = None
+    description: str | None = None
+    source_page: HttpUrl
+    fetched_at: str
 
 
 def fetch_page(url: str) -> bytes:
@@ -99,6 +113,14 @@ def load_or_fetch_detail(url: str) -> bytes:
     return html
 
 
+def normalize_price(price_text: str) -> float:
+    """Extract numeric value from price string like '£51.77'."""
+    match = re.search(r"[\d.]+", price_text)
+    if not match:
+        raise ValueError(f"Cannot parse price: {price_text!r}")
+    return float(match.group())
+
+
 def extract_book_detail(html: bytes, product_url: str, source_page: str) -> dict:
     """Parse a single book detail page and return a raw record."""
     soup = BeautifulSoup(html, "html.parser")
@@ -110,6 +132,7 @@ def extract_book_detail(html: bytes, product_url: str, source_page: str) -> dict
     # Price — first price inside the product area
     price_tag = soup.select_one("div.product_main p.price_color")
     price_text = price_tag.get_text(strip=True) if price_tag else None
+    price_gbp = normalize_price(price_text) if price_text else None
 
     # Availability
     avail_tag = soup.select_one("div.product_main p.instock.availability")
@@ -133,6 +156,7 @@ def extract_book_detail(html: bytes, product_url: str, source_page: str) -> dict
         "title": title,
         "product_url": product_url,
         "price_text": price_text,
+        "price_gbp": price_gbp,
         "availability_text": availability_text,
         "rating_text": rating_text,
         "description": description,
@@ -143,6 +167,7 @@ def extract_book_detail(html: bytes, product_url: str, source_page: str) -> dict
 
 def main() -> None:
     os.makedirs(CACHE_DIR, exist_ok=True)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     all_links: list[str] = []
     current_url = BASE_URL.format(1)
@@ -163,19 +188,45 @@ def main() -> None:
     print(f"catalogue_pages={MAX_PAGES} discovered={len(all_links)} unique_urls={len(unique_links)}")
 
     # Stage 3 — fetch and parse every detail page
-    detail_pages: list[dict] = []
+    raw_records: list[dict] = []
     source_page = BASE_URL.format(1)
     for idx, url in enumerate(unique_links, 1):
         detail_html = load_or_fetch_detail(url)
         record = extract_book_detail(detail_html, url, source_page)
-        detail_pages.append(record)
+        raw_records.append(record)
         if idx % 10 == 0:
             print(f"  … parsed {idx}/{len(unique_links)} detail pages")
 
-    # Checkpoint — print one complete raw record
-    print("\nCHECKPOINT — one complete raw record:")
-    print(json.dumps(detail_pages[0], indent=2))
-    print(f"\ndetail_pages={len(detail_pages)}")
+    # Stage 4 — deduplicate, validate, write output
+    seen_urls: set[str] = set()
+    books: list[dict] = []
+    errors: list[dict] = []
+
+    for record in raw_records:
+        url = record["product_url"]
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+
+        try:
+            validated = BookRecord(**record)
+            books.append(validated.model_dump(mode="json"))
+        except ValidationError as e:
+            errors.append({"record": record, "error": e.errors()})
+
+    # Write output files (idempotent — overwrite on each run)
+    books_path = os.path.join(OUTPUT_DIR, "books.json")
+    with open(books_path, "w") as f:
+        json.dump(books, f, indent=2)
+
+    errors_path = os.path.join(OUTPUT_DIR, "errors.json")
+    with open(errors_path, "w") as f:
+        json.dump(errors, f, indent=2)
+
+    print(f"\nCHECKPOINT — one complete raw record:")
+    print(json.dumps(books[0], indent=2))
+    print(f"\nbooks={len(books)} errors={len(errors)}")
+    print(f"Output: {books_path}")
 
 
 if __name__ == "__main__":
