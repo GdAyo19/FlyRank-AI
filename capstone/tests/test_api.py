@@ -3,39 +3,25 @@ Tests for the AI Image Matching Engine.
 """
 
 import pytest
-import asyncio
-from httpx import AsyncClient, ASGITransport
+from fastapi.testclient import TestClient
 from app.main import app
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
-
-
-@pytest.fixture
-async def client():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
+client = TestClient(app)
 
 
 class TestHealthEndpoints:
     """Tests for basic health and info endpoints."""
 
-    @pytest.mark.asyncio
-    async def test_root(self, client):
-        response = await client.get("/")
+    def test_root(self):
+        response = client.get("/")
         assert response.status_code == 200
         data = response.json()
         assert data["name"] == "AI Image Matching Engine"
         assert "endpoints" in data
 
-    @pytest.mark.asyncio
-    async def test_health(self, client):
-        response = await client.get("/health")
+    def test_health(self):
+        response = client.get("/health")
         assert response.status_code == 200
         assert response.json()["status"] == "ok"
 
@@ -43,9 +29,8 @@ class TestHealthEndpoints:
 class TestPostEndpoints:
     """Tests for post CRUD operations."""
 
-    @pytest.mark.asyncio
-    async def test_create_post(self, client):
-        response = await client.post("/posts", json={
+    def test_create_post(self):
+        response = client.post("/posts", json={
             "title": "Test Post",
             "content": "This is test content about red foxes",
             "category": "animal"
@@ -56,44 +41,39 @@ class TestPostEndpoints:
         assert data["category"] == "animal"
         assert data["processed"] is False
 
-    @pytest.mark.asyncio
-    async def test_list_posts(self, client):
-        response = await client.get("/posts")
+    def test_list_posts(self):
+        response = client.get("/posts")
         assert response.status_code == 200
         assert isinstance(response.json(), list)
 
-    @pytest.mark.asyncio
-    async def test_get_post(self, client):
+    def test_get_post(self):
         # Create a post first
-        create_resp = await client.post("/posts", json={
+        create_resp = client.post("/posts", json={
             "title": "Get Test",
             "content": "Content here",
             "category": "animal"
         })
         post_id = create_resp.json()["id"]
 
-        response = await client.get(f"/posts/{post_id}")
+        response = client.get(f"/posts/{post_id}")
         assert response.status_code == 200
         assert response.json()["id"] == post_id
 
-    @pytest.mark.asyncio
-    async def test_get_post_not_found(self, client):
-        response = await client.get("/posts/99999")
+    def test_get_post_not_found(self):
+        response = client.get("/posts/99999")
         assert response.status_code == 404
 
 
 class TestImageEndpoints:
     """Tests for image upload and listing."""
 
-    @pytest.mark.asyncio
-    async def test_list_images(self, client):
-        response = await client.get("/images")
+    def test_list_images(self):
+        response = client.get("/images")
         assert response.status_code == 200
         assert isinstance(response.json(), list)
 
-    @pytest.mark.asyncio
-    async def test_get_image_not_found(self, client):
-        response = await client.get("/images/99999")
+    def test_get_image_not_found(self):
+        response = client.get("/images/99999")
         assert response.status_code == 404
 
 
