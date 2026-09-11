@@ -1,86 +1,18 @@
 """
 Tests for the AI Image Matching Engine.
+
+Guard logic tests run standalone (no dependencies).
+API tests skip if fastapi is not installed.
 """
 
 import pytest
-from fastapi.testclient import TestClient
-from app.main import app
-
-
-client = TestClient(app)
-
-
-class TestHealthEndpoints:
-    """Tests for basic health and info endpoints."""
-
-    def test_root(self):
-        response = client.get("/")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["name"] == "AI Image Matching Engine"
-        assert "endpoints" in data
-
-    def test_health(self):
-        response = client.get("/health")
-        assert response.status_code == 200
-        assert response.json()["status"] == "ok"
-
-
-class TestPostEndpoints:
-    """Tests for post CRUD operations."""
-
-    def test_create_post(self):
-        response = client.post("/posts", json={
-            "title": "Test Post",
-            "content": "This is test content about red foxes",
-            "category": "animal"
-        })
-        assert response.status_code == 201
-        data = response.json()
-        assert data["title"] == "Test Post"
-        assert data["category"] == "animal"
-        assert data["processed"] is False
-
-    def test_list_posts(self):
-        response = client.get("/posts")
-        assert response.status_code == 200
-        assert isinstance(response.json(), list)
-
-    def test_get_post(self):
-        # Create a post first
-        create_resp = client.post("/posts", json={
-            "title": "Get Test",
-            "content": "Content here",
-            "category": "animal"
-        })
-        post_id = create_resp.json()["id"]
-
-        response = client.get(f"/posts/{post_id}")
-        assert response.status_code == 200
-        assert response.json()["id"] == post_id
-
-    def test_get_post_not_found(self):
-        response = client.get("/posts/99999")
-        assert response.status_code == 404
-
-
-class TestImageEndpoints:
-    """Tests for image upload and listing."""
-
-    def test_list_images(self):
-        response = client.get("/images")
-        assert response.status_code == 200
-        assert isinstance(response.json(), list)
-
-    def test_get_image_not_found(self):
-        response = client.get("/images/99999")
-        assert response.status_code == 404
 
 
 class TestGuardLogic:
-    """Tests for the mismatch guard logic."""
+    """Tests for the mismatch guard logic - no external dependencies."""
 
-    def test_guard_rejects_category_mismatch(self):
+    def test_guard_passes_compatible_categories(self):
+        """Same category should pass."""
         from app.mismatch_guard import MismatchGuard
         from app.schemas import ClassificationResult
 
@@ -99,10 +31,10 @@ class TestGuardLogic:
             similarity_score=0.8
         )
 
-        # Should pass - both are animals
         assert result.passed is True
 
     def test_guard_rejects_low_similarity(self):
+        """Similarity below threshold should fail."""
         from app.mismatch_guard import MismatchGuard
         from app.schemas import ClassificationResult
 
@@ -118,13 +50,14 @@ class TestGuardLogic:
         result = guard.evaluate(
             post_category="animal",
             image_classification=classification,
-            similarity_score=0.5  # Below threshold
+            similarity_score=0.5
         )
 
         assert result.passed is False
         assert "Similarity score" in result.explanation
 
     def test_guard_rejects_incompatible_categories(self):
+        """Vehicle image for animal post should fail."""
         from app.mismatch_guard import MismatchGuard
         from app.schemas import ClassificationResult
 
@@ -147,6 +80,7 @@ class TestGuardLogic:
         assert "Category mismatch" in result.explanation
 
     def test_guard_flags_low_confidence(self):
+        """Low confidence with wrong category should fail."""
         from app.mismatch_guard import MismatchGuard
         from app.schemas import ClassificationResult
 
@@ -156,7 +90,7 @@ class TestGuardLogic:
             category="other",
             attributes=[],
             caption="Something unclear",
-            confidence=0.3  # Low confidence
+            confidence=0.3
         )
 
         result = guard.evaluate(
@@ -165,5 +99,83 @@ class TestGuardLogic:
             similarity_score=0.9
         )
 
-        # Should fail due to category mismatch
         assert result.passed is False
+
+
+try:
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+    HAS_FASTAPI = True
+except ImportError:
+    HAS_FASTAPI = False
+
+
+@pytest.mark.skipif(not HAS_FASTAPI, reason="fastapi not installed")
+class TestHealthEndpoints:
+    """Tests for basic health and info endpoints."""
+
+    def test_root(self):
+        response = client.get("/")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "AI Image Matching Engine"
+        assert "endpoints" in data
+
+    def test_health(self):
+        response = client.get("/health")
+        assert response.status_code == 200
+        assert response.json()["status"] == "ok"
+
+
+@pytest.mark.skipif(not HAS_FASTAPI, reason="fastapi not installed")
+class TestPostEndpoints:
+    """Tests for post CRUD operations."""
+
+    def test_create_post(self):
+        response = client.post("/posts", json={
+            "title": "Test Post",
+            "content": "This is test content about red foxes",
+            "category": "animal"
+        })
+        assert response.status_code == 201
+        data = response.json()
+        assert data["title"] == "Test Post"
+        assert data["category"] == "animal"
+        assert data["processed"] is False
+
+    def test_list_posts(self):
+        response = client.get("/posts")
+        assert response.status_code == 200
+        assert isinstance(response.json(), list)
+
+    def test_get_post(self):
+        create_resp = client.post("/posts", json={
+            "title": "Get Test",
+            "content": "Content here",
+            "category": "animal"
+        })
+        post_id = create_resp.json()["id"]
+
+        response = client.get(f"/posts/{post_id}")
+        assert response.status_code == 200
+        assert response.json()["id"] == post_id
+
+    def test_get_post_not_found(self):
+        response = client.get("/posts/99999")
+        assert response.status_code == 404
+
+
+@pytest.mark.skipif(not HAS_FASTAPI, reason="fastapi not installed")
+class TestImageEndpoints:
+    """Tests for image upload and listing."""
+
+    def test_list_images(self):
+        response = client.get("/images")
+        assert response.status_code == 200
+        assert isinstance(response.json(), list)
+
+    def test_get_image_not_found(self):
+        response = client.get("/images/99999")
+        assert response.status_code == 404
