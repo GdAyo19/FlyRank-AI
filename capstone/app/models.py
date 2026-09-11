@@ -38,7 +38,7 @@ class Image(Base):
     embeddings = relationship("ImageEmbedding", back_populates="image", cascade="all, delete-orphan")
 
 
-class ImageEmbedding(VectorMixin):
+class ImageEmbedding(Base):
     """Stores vector embeddings for image captions."""
     __tablename__ = "image_embeddings"
 
@@ -128,11 +128,6 @@ class ProcessingJob(Base):
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-
-
-class VectorMixin:
-    """Mixin for tables that store vector embeddings."""
-    pass
 
 
 # Database engine and session factory
