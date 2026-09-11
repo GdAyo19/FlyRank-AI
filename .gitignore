@@ -1,9 +1,11 @@
 # Python cache
 __pycache__/
 *.pyc
+*.pyo
 
 # Virtualenv
 .venv/
+venv/
 
 # Secrets — never commit real credentials
 .env
@@ -12,3 +14,25 @@ __pycache__/
 tasks.db
 tasks.db-wal
 tasks.db-shm
+image_matching.db
+image_matching.db-wal
+image_matching.db-shm
+
+# Uploaded images
+capstone/images/*.jpg
+capstone/images/*.jpeg
+capstone/images/*.png
+capstone/images/*.webp
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/

@@ -1,0 +1,52 @@
+[
+    {
+        "post_id": 1,
+        "expected_image_id": 1,
+        "description": "Post about red foxes should match the red fox image"
+    },
+    {
+        "post_id": 2,
+        "expected_image_id": 5,
+        "description": "Post about wolves should match the gray wolf image"
+    },
+    {
+        "post_id": 3,
+        "expected_image_id": 9,
+        "description": "Post about dogs should match the golden retriever image"
+    },
+    {
+        "post_id": 4,
+        "expected_image_id": 13,
+        "description": "Post about bears should match the brown bear image"
+    },
+    {
+        "post_id": 5,
+        "expected_image_id": 17,
+        "description": "Post about deer should match the white-tailed deer image"
+    },
+    {
+        "post_id": 6,
+        "expected_image_id": 21,
+        "description": "Post about mountains should match the mountain landscape"
+    },
+    {
+        "post_id": 7,
+        "expected_image_id": 25,
+        "description": "Post about oceans should match the ocean sunset image"
+    },
+    {
+        "post_id": 8,
+        "expected_image_id": 29,
+        "description": "Post about cats should match the tabby cat image"
+    },
+    {
+        "post_id": 9,
+        "expected_image_id": 33,
+        "description": "Post about eagles should match the bald eagle image"
+    },
+    {
+        "post_id": 10,
+        "expected_image_id": 37,
+        "description": "Post about horses should match the wild horse image"
+    }
+]
